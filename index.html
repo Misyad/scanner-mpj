@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Scanner MPJ</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    :root { --bg-dark: #0f1115; --accent-neon: #eab308; --text-light: #f9fafb; --card-bg: #1a1d24; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background-color: var(--bg-dark); color: var(--text-light); display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+    
+    .header { text-align: center; margin-bottom: 20px; width: 100%; max-width: 500px; }
+    .header h1 { font-size: 1.5rem; color: var(--accent-neon); display: flex; align-items: center; justify-content: center; gap: 10px; }
+    
+    .scanner-card { background: var(--card-bg); width: 100%; max-width: 500px; border-radius: 20px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+    
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; border: 3px solid var(--accent-neon); margin-bottom: 20px; background: #000; }
+    
+    .btn-neon { background: var(--accent-neon); color: #000; border: none; padding: 15px 25px; border-radius: 50px; font-weight: 800; font-size: 1.1rem; cursor: pointer; width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; transition: 0.2s; margin-bottom: 15px; }
+    .btn-neon:active { transform: scale(0.95); }
+    .btn-stop { background: #ef4444; color: white; }
+    
+    #result-box { display: none; padding: 20px; border-radius: 12px; margin-top: 15px; font-weight: 700; flex-direction: column; gap: 10px; }
+    .status-success { background: #dcfce7; color: #166534; border: 1px solid #22c55e; }
+    .status-error { background: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
+    .status-loading { background: #fef08a; color: #854d0e; border: 1px solid #eab308; }
+    
+    .manual-input-box { margin-top: 20px; padding-top: 20px; border-top: 1px dashed #4b5563; }
+    .input-style { width: 100%; padding: 15px; border-radius: 12px; border: 1px solid #374151; background: #111; color: white; font-size: 1rem; margin-bottom: 10px; text-transform: uppercase; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1><i class="fas fa-video"></i> Live Scanner MPJ</h1>
+    <p style="color:#9ca3af; font-size: 0.9rem; margin-top: 5px;">Arahkan kamera ke QR Code peserta.</p>
+  </div>
+
+  <div class="scanner-card">
+    
+    <div id="reader" style="display:none;"></div>
+    
+    <button id="btn-start" class="btn-neon" onclick="startScanner()"><i class="fas fa-camera"></i> NYALAKAN KAMERA</button>
+    <button id="btn-stop" class="btn-neon btn-stop" onclick="stopScanner()" style="display:none;"><i class="fas fa-stop"></i> MATIKAN KAMERA</button>
+    <button id="btn-next" class="btn-neon" onclick="resetScanner()" style="display:none; background:#3b82f6; color:white;"><i class="fas fa-redo"></i> SCAN PESERTA LAIN</button>
+
+    <div id="result-box"></div>
+
+    <div class="manual-input-box" id="manual-box">
+      <p style="color:#9ca3af; font-size: 0.85rem; margin-bottom: 10px;">Atau ketik ID secara manual:</p>
+      <input type="text" id="input-id" class="input-style" placeholder="Contoh: MPJ-7654">
+      <button class="btn-neon" style="background:#fff; color:#000;" onclick="kirimManual()"><i class="fas fa-paper-plane"></i> KIRIM ID</button>
+    </div>
+
+  </div>
+
+  <audio id="beep-sound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
+  <script>
+    // ========================================================
+    // 🚨 MAS AHMAD: PASTE LINK WEB APP GAS DI BAWAH INI 🚨
+    // ========================================================
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxAQOUJVTsdK-PitGoXA_YFS10fUhkrH6pca3HBNryDlm7ITqorUj0ECpge3l-jmYCB";
+    
+    let html5QrCode;
+    let isScanning = false;
+
+    function startScanner() {
+      document.getElementById('btn-start').style.display = 'none';
+      document.getElementById('manual-box').style.display = 'none';
+      document.getElementById('result-box').style.display = 'none';
+      document.getElementById('reader').style.display = 'block';
+      document.getElementById('btn-stop').style.display = 'flex';
+
+      html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(
+        { facingMode: "environment" }, // Paksa pakai kamera belakang
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          // JIKA BERHASIL TERBACA!
+          if(isScanning) return; // Cegah scan dobel
+          isScanning = true;
+          
+          document.getElementById('beep-sound').play(); // Bunyi Beep!
+          stopScanner(); // Matikan kamera agar fokus proses
+          kirimKeServer(decodedText);
+        },
+        (errorMessage) => { /* Abaikan error cari frame */ }
+      ).catch(err => {
+        alert("Gagal mengakses kamera. Pastikan Anda memberi izin kamera pada browser.");
+        resetScanner();
+      });
+    }
+
+    function stopScanner() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+          document.getElementById('reader').style.display = 'none';
+          document.getElementById('btn-stop').style.display = 'none';
+        }).catch(err => console.log(err));
+      }
+    }
+
+    function resetScanner() {
+      isScanning = false;
+      document.getElementById('result-box').style.display = 'none';
+      document.getElementById('btn-next').style.display = 'none';
+      document.getElementById('manual-box').style.display = 'block';
+      document.getElementById('input-id').value = '';
+      startScanner(); // Langsung nyalakan kamera lagi
+    }
+
+    function kirimManual() {
+      const manualId = document.getElementById('input-id').value.trim();
+      if(!manualId) return alert("Ketik ID tiket dulu!");
+      stopScanner();
+      kirimKeServer(manualId.toUpperCase());
+    }
+
+    function kirimKeServer(qrText) {
+      const resBox = document.getElementById('result-box');
+      resBox.style.display = 'flex';
+      resBox.className = 'status-loading';
+      resBox.innerHTML = `<i class="fas fa-spinner fa-spin fa-2x"></i><span>Menghubungkan ke Server MPJ...<br><small>${qrText}</small></span>`;
+      
+      document.getElementById('btn-start').style.display = 'none';
+      document.getElementById('manual-box').style.display = 'none';
+
+      // PROSES TEMBAK API KE GOOGLE SCRIPT
+      const finalUrl = GAS_API_URL + "?action=checkin&id=" + encodeURIComponent(qrText) + "&panitia=LiveScanner";
+
+      fetch(finalUrl)
+        .then(response => response.json())
+        .then(data => {
+          // BERHASIL DAPAT JAWABAN DARI SERVER
+          if (data.status === 'success') {
+            resBox.className = 'status-success';
+            resBox.innerHTML = `<i class="fas fa-check-circle fa-3x"></i><span style="font-size:1.2rem; text-transform:uppercase;">${data.status}</span><span>${data.pesan}</span>`;
+          } else {
+            resBox.className = 'status-error';
+            resBox.innerHTML = `<i class="fas fa-times-circle fa-3x"></i><span style="font-size:1.2rem; text-transform:uppercase;">${data.status}</span><span>${data.pesan}</span>`;
+          }
+          document.getElementById('btn-next').style.display = 'flex'; // Munculkan tombol scan lagi
+        })
+        .catch(error => {
+          resBox.className = 'status-error';
+          resBox.innerHTML = `<i class="fas fa-exclamation-triangle fa-2x"></i><span>Koneksi gagal. Cek sinyal internet Anda.</span>`;
+          document.getElementById('btn-next').style.display = 'flex';
+        });
+    }
+  </script>
+</body>
+</html>
